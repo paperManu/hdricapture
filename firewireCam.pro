@@ -7,8 +7,10 @@ CONFIG -= qt
 
 SOURCES += main.cpp \
     hdribuilder.cpp \
-    camera.cpp
+    camera.cpp \
+    chromedsphere.cpp
 
 HEADERS += \
     hdribuilder.h \
-    camera.h
+    camera.h \
+    chromedsphere.h

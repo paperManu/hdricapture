@@ -20,35 +20,53 @@ int main(int argc, char** argv)
 
     // Camera parameters
     camera lCamera;
-    float lAperture = 4.0f;
+    float lAperture = 5.6f;
     float lISO = 100.0f;
+    float lStopSteps = 1.0f;
+    float lGain = 0.0f;
 
-    if(argc > 1)
+    if(argc < 2)
     {
-        if(strcmp(argv[1], "--view") == 0)
-            lViewMode = true;
-        else if(strcmp(argv[1], "--ldr") == 0)
+        cout << "No argument - Running in view mode." << endl;
+        lViewMode = true;
+    }
+    else
+    {
+        for(int i=1; i<argc; i++)
         {
-            if(argc == 2)
-                lLdrNbr = 5;
-            else
-                lLdrNbr = boost::lexical_cast<int>(argv[2]);
-
-            if(argc == 4 && strcmp(argv[3], "--hdr") == 0)
+            if(strcmp(argv[i], "--view") == 0)
+            {
+                lViewMode = true;
+            }
+            else if(strcmp(argv[i], "--gain") == 0)
+            {
+                lGain = boost::lexical_cast<float>(argv[i+1]);
+            }
+            else if(strcmp(argv[i], "--ldr") == 0)
+            {
+                lLdrNbr = boost::lexical_cast<int>(argv[i+1]);
+            }
+            else if(strcmp(argv[i], "--hdr") == 0)
+            {
                 lCreateHDRi = true;
+            }
+            else if(strcmp(argv[i], "--stop") == 0)
+            {
+                lStopSteps = boost::lexical_cast<float>(argv[i+1]);
+            }
         }
-        else
-            return 0;
     }
 
     if(!lCamera.open(sony))
         return 1;
 
-    lCamera.setAperture(4.f);
+    lCamera.setAperture(lAperture);
     lCamera.setWidth(1280);
     lCamera.setColorBalance(1.f, 1.f);
     lCamera.setGamma(1.f);
-    lCamera.setGain(0.f);
+    lCamera.setDefaultISO(lISO);
+    lCamera.setGain(lGain);
+    lCamera.setFrameRate(7.5);
 
     Mat lFrame;
 
@@ -63,7 +81,8 @@ int main(int argc, char** argv)
         for(int i=0; i<lLdrNbr; i++)
         {
             lCamera.setShutter(lShutterSpeed);
-            lShutterSpeed *= pow(2, 1.0);
+            // Real shutter speed might differ from the specified one
+            lShutterSpeed = lCamera.getShutter();
 
             // Loop to empty the buffer
             for(int j=0; j<5; j++)
@@ -77,9 +96,9 @@ int main(int argc, char** argv)
             {
                 Mat lFrame_RGB(lFrame.size(), lFrame.type());
                 cvtColor(lFrame, lFrame_RGB, CV_BGR2RGB);
-                lResult = lHDRiBuilder.addLDR(&lFrame_RGB, log2(lAperture*lAperture*lShutterSpeed*100/lISO));
+                lResult = lHDRiBuilder.addLDR(&lFrame_RGB, lCamera.getEV());
                 if(lResult)
-                    cout << "LDRi successfully added." << endl;
+                    cout << "LDRi successfully added, f=" << lAperture << ", 1/t=" << lShutterSpeed << endl;
                 else
                     cout << "Error while adding LDRi." << endl;
             }
@@ -90,6 +109,8 @@ int main(int argc, char** argv)
             {
                 cout << "Error while writing image n°" << i << endl;
             }
+
+            lShutterSpeed *= pow(2, lStopSteps);
         }
 
         if(lCreateHDRi)

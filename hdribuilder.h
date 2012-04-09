@@ -50,7 +50,12 @@ private:
 
     /****************/
     // Methods
-    float getGaussian(float pValue);
+    // Returns the coefficient to apply to a 8u value
+    // according to a gaussian curve centered on 127
+    float getGaussian(unsigned char pValue);
+
+    // Orders the LDRi from the most to least exposed
+    void orderLDRi();
 };
 }
 

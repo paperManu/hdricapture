@@ -9,6 +9,7 @@ camera::camera()
     mAperture = 2.f;
     mShutter = 60.f;
     mGain = 0.f;
+    mDefaultISO = 100.f;
 }
 
 /*******************************************/
@@ -130,6 +131,29 @@ bool camera::setGain(float pGain)
 }
 
 /*******************************************/
+void camera::setDefaultISO(float pISO)
+{
+    mDefaultISO = max(pISO, 0.f);
+}
+
+/*******************************************/
+bool camera::setFrameRate(float pRate)
+{
+    bool lResult = true;
+
+    switch(mCameraType)
+    {
+    case sony:
+        lResult &= mCamera.set(CV_CAP_PROP_FPS, pRate);
+        break;
+    default:
+        lResult = false;
+    }
+
+    return lResult;
+}
+
+/*******************************************/
 bool camera::setBrightness(float pBrightness)
 {
     bool lResult = true;
@@ -198,6 +222,30 @@ bool camera::setWidth(unsigned int pWidth)
 bool camera::setHeight(unsigned int pHeight)
 {
     return mCamera.set(CV_CAP_PROP_FRAME_HEIGHT, pHeight);
+}
+
+/*******************************************/
+float camera::getAperture()
+{
+    return mAperture;
+}
+
+/*******************************************/
+float camera::getShutter()
+{
+    return mShutter;
+}
+
+/*******************************************/
+float camera::getGain()
+{
+    return mGain;
+}
+
+/*******************************************/
+float camera::getEV()
+{
+    return log2(mAperture*mAperture*mShutter*100/mDefaultISO)-mGain/6.f;
 }
 
 /*******************************************/
