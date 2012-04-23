@@ -6,6 +6,7 @@
 
 #include "hdribuilder.h"
 #include "camera.h"
+#include "chromedsphere.h"
 
 using namespace std;
 using namespace cv;
@@ -16,6 +17,7 @@ int main(int argc, char** argv)
     bool lResult;
     bool lViewMode = false;
     bool lCreateHDRi = false;
+    bool lProbeMode = false;
     int lLdrNbr = 1;
 
     // Camera parameters
@@ -54,6 +56,10 @@ int main(int argc, char** argv)
             {
                 lStopSteps = boost::lexical_cast<float>(argv[i+1]);
             }
+            else if(strcmp(argv[i], "--probe") == 0)
+            {
+                lProbeMode = true;
+            }
         }
     }
 
@@ -69,6 +75,33 @@ int main(int argc, char** argv)
     lCamera.setFrameRate(7.5);
 
     Mat lFrame;
+
+    if(lProbeMode == true)
+    {
+        chromedSphere lSphere;
+
+        double lShutterSpeed = 15;
+
+        lCamera.setShutter(lShutterSpeed);
+        lCamera.setGamma(2.2f);
+
+        // Image capture
+        lFrame = lCamera.getImage();
+
+        imwrite("capture.png", lFrame);
+
+        // Setting the light probe
+        lSphere.setProjection(eEquirectangular);
+        lSphere.setSphereSize(50.8f);
+        lSphere.setProbe(&lFrame, 52.8f, Vec3f(628.f, 444.f, 260.f));
+
+        Mat lPano;
+        lPano = lSphere.getConvertedProbe();
+
+        imwrite("panorama.png", lPano);
+
+        return 0;
+    }
 
     if(lViewMode == false)
     {
@@ -156,6 +189,11 @@ int main(int argc, char** argv)
                 {
                     lShutterSpeed = max(lShutterSpeed/2.0, 7.5);
                     lCamera.setShutter(lShutterSpeed);
+                }
+                else if(lKey == 's')
+                {
+                    cout << "Shot!" << endl;
+                    imwrite("capture.png", lFrame);
                 }
                 else
                 {
