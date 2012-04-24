@@ -152,7 +152,7 @@ void chromedSphere::createTransformationMap()
             else
             {
                 lAlpha = atanf(((x-lWidth/2.f)*mSphereDiameter/lWidth)/mCameraDistance);
-                lBeta = atanf(((y-lHeight/2.f)*mSphereDiameter/lHeight)/mCameraDistance);
+                lBeta = -atanf(((y-lHeight/2.f)*mSphereDiameter/lHeight)/mCameraDistance);
 
 #ifdef _DEBUG
                 lDebugAngle.at<Vec3b>(y, x)[0] = (unsigned char)roundf(((lAlpha+mCroppedFOV/2.f)*255.f/mCroppedFOV));
@@ -247,57 +247,37 @@ Vec2f chromedSphere::directionFromViewAngle(Vec2f pAngle)
     // which is normal to the sphere: there it goes the opposite
     lNewCoords[0] = -lNewCoords[0];
 
-    // And we calculate final values
-    float lBeta1, lBeta2;
-    if(lX == 0.f)
-    {
-        if(lY > 0.f)
-            lBeta1 = -M_PI/2.f;
-        else
-            lBeta1 = M_PI/2.f;
+    // We can reproject the direction in the old base
+    Vec3f lOutDir = lNewCoords[0]*lU + lNewCoords[1]*lV + lNewCoords[2]*lW;
 
-        if(lZ > 0.f)
-            lBeta2 = M_PI/2.f;
+    // Calculate Euler angles from this new direction
+    lOutDir = lOutDir*(1/sqrt(lOutDir.dot(lOutDir)));
+
+    float lYaw, lPitch;
+    // First, yaw
+    if(lOutDir[0] == 0.f)
+    {
+        if(lOutDir[1] > 0.f)
+            lYaw = M_PI_2;
         else
-            lBeta2 = -M_PI/2.f;
+            lYaw = -M_PI_2;
+    }
+    else if(lOutDir[0] > 0.f)
+    {
+        if(lOutDir[1] < 0.f)
+            lYaw = asin(-lOutDir[1]/sqrt(lOutDir[0]*lOutDir[0]+lOutDir[1]*lOutDir[1]));
+        else
+            lYaw = 2*M_PI+asin(-lOutDir[1]/sqrt(lOutDir[0]*lOutDir[0]+lOutDir[1]*lOutDir[1]));
     }
     else
     {
-        lBeta1 = atan(lY/lX);
-        lBeta2 = atan(lZ/lX)/cos(lBeta1);
+        lYaw = M_PI-asin(-lOutDir[1]/sqrt(lOutDir[0]*lOutDir[0]+lOutDir[1]*lOutDir[1]));
     }
 
-    float lR1 = sqrt(lX*lX+lY*lY);
-    float lR2 = sqrt(lX*lX+lZ*lZ);
+    // Then pitch
+    lPitch = asin(lOutDir[2]);
 
-    float lLambda1, lLambda2;
-    // Here we need to take approximation into account
-    float lBuffer = (lX*(lC-lX)-lY*lY)/(lR1*sqrt((lC-lX)*(lC-lX)+lY*lY));
-    if(lBuffer < -1.f)
-        lBuffer = -1.f;
-    else if(lBuffer > 1.f)
-        lBuffer = 1.f;
-    lLambda1 = acos(lBuffer);
-
-    lBuffer = (lX*(lC-lX)-lZ*lZ)/(lR2*sqrt((lC-lX)*(lC-lX)+lZ*lZ));
-    if(lBuffer < -1.f)
-        lBuffer = -1.f;
-    else if(lBuffer > 1.f)
-        lBuffer = 1.f;
-    lLambda2 = acos(lBuffer);
-
-    float lDelta1, lDelta2;
-    if(lY > 0.f)
-        lDelta1 = lBeta1-lLambda1;
-    else
-        lDelta1 = lBeta1+lLambda1;
-
-    if(lZ > 0.f)
-        lDelta2 = lBeta2-lLambda2;
-    else
-        lDelta2 = lBeta2+lLambda2;
-
-    return Vec2f(lDelta1, lDelta2);
+    return Vec2f(lYaw-M_PI, lPitch);
 }
 
 /*******************************************/
@@ -370,5 +350,4 @@ void chromedSphere::projectionMapFromDirections()
             }
         }
     }
-    mMap = lBackMap.clone();
 }
