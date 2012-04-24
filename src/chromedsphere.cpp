@@ -146,30 +146,7 @@ void chromedSphere::createTransformationMap()
             // Check if the pixel is on the mirror ball
             if(sqrtf(powf(x-lWidth/2.f, 2.f)+powf(y-lHeight/2.f, 2.f)) > lWidth/2.f)
             {
-                // If not, we calculate the position on the same vector on the 2D image
-                // which is on the ball, and set the map according to this position
-                float lDelta;
-
-                if((x-lWidth/2.f) > 0.f)
-                {
-                    lDelta = atanf((y-lHeight/2.f)/(x-lWidth/2.f));
-                }
-                else if((x-lWidth/2.f) < 0.f)
-                {
-                    lDelta = atan((y-lHeight/2.f)/(x-lWidth/2.f))+M_PI;
-                }
-                else
-                {
-                    if(y > 0.f)
-                        lDelta = M_PI_2;
-                    else
-                        lDelta = -M_PI_2;
-                }
-
-                lAlpha = atanf((cos(lDelta)*mSphereDiameter/2.f)/mCameraDistance);
-                lBeta = atanf((sin(lDelta)*mSphereDiameter/2.f)/mCameraDistance);
-
-                // Temporary: set the value to the back of the sphere to a constant
+                // Set the value to a constant, corresponding to the back of the sphere
                 mMap.at<Vec2f>(y, x) = Vec2f(M_PI, M_PI);
             }
             else
@@ -253,6 +230,23 @@ Vec2f chromedSphere::directionFromViewAngle(Vec2f pAngle)
     lY = lT*tan(lA);
     lZ = lT*tan(lB);
 
+    // Now, we create a base to project the ray from the camera on
+    Vec3f lU, lV, lW;
+    lU = Vec3f(lX, lY, lZ)*(1/lR); // This is the normal to the sphere
+    lV = Vec3f(lU[1], -lU[0], 0);
+    lW = lU.cross(lV);
+
+    // Projection on this new base
+    Vec3f lNewCoords;
+    Vec3f lInDir = Vec3f(lX-lC, lY, lZ);
+    lNewCoords[0] = lInDir.dot(lU);
+    lNewCoords[1] = lInDir.dot(lV);
+    lNewCoords[2] = lInDir.dot(lW);
+
+    // The reflected ray has the same direction, except on the axis
+    // which is normal to the sphere: there it goes the opposite
+    lNewCoords[0] = -lNewCoords[0];
+
     // And we calculate final values
     float lBeta1, lBeta2;
     if(lX == 0.f)
@@ -270,7 +264,7 @@ Vec2f chromedSphere::directionFromViewAngle(Vec2f pAngle)
     else
     {
         lBeta1 = atan(lY/lX);
-        lBeta2 = atan(lZ/lX);
+        lBeta2 = atan(lZ/lX)/cos(lBeta1);
     }
 
     float lR1 = sqrt(lX*lX+lY*lY);
@@ -376,4 +370,5 @@ void chromedSphere::projectionMapFromDirections()
             }
         }
     }
+    mMap = lBackMap.clone();
 }

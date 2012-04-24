@@ -93,7 +93,7 @@ int main(int argc, char** argv)
         // Setting the light probe
         lSphere.setProjection(eEquirectangular);
         lSphere.setSphereSize(50.8f);
-        lSphere.setProbe(&lFrame, 52.8f, Vec3f(628.f, 444.f, 260.f));
+        lSphere.setProbe(&lFrame, 52.8f, Vec3f(634.f, 444.f, 260.f));
 
         Mat lPano;
         lPano = lSphere.getConvertedProbe();
