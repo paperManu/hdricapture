@@ -21,9 +21,18 @@ bool chromedSphere::setProbe(Mat *pImage, float pFOV, Vec3f pSphere)
         return false;
 
     // Copying the input image
-    mImage = pImage->clone();
+    mImage = *pImage;
     mFOV = pFOV*M_PI/180.f;
-    mSphere = pSphere;
+
+    // If the sphere is not specified, we detect it
+    if(pSphere[2] == 0.f)
+        mSphere = detectSphere();
+    else
+        mSphere = pSphere;
+
+    // If no sphere is detected, we indicate so.
+    if(mSphere[2] == 0.f)
+        return false;
 
     // Position and size of the sphere on the image are given
     // We use that to estimate its distance from the camera
@@ -41,12 +50,27 @@ bool chromedSphere::setProbe(Mat *pImage, float pFOV, Vec3f pSphere)
 /*******************************************/
 Mat chromedSphere::getConvertedProbe()
 {
-    Mat lImage;
+    Mat lImage, lProbe;
+
+    // If no sphere was detected
+    if(mSphere[2] == 0.f)
+        return Mat::zeros(256, 512, mImage.type());
 
     // Correct the probe
     remap(mSphereImage, lImage, mMap, Mat(), CV_INTER_LINEAR, BORDER_CONSTANT, Scalar(0, 0, 0));
 
-    return lImage;
+    // Crop and resize the probe
+    switch(mProjection)
+    {
+    case eEquirectangular:
+        resize(lImage, lImage, Size(512, 512));
+        lProbe = lImage(Rect(0, 128, 512, 256));
+        break;
+    default:
+        break;
+    }
+
+    return lProbe;
 }
 
 /*******************************************/
@@ -68,10 +92,46 @@ void chromedSphere::setProjection(projection pProjection)
 }
 
 /*******************************************/
-Mat chromedSphere::detectSphere()
+Vec3f chromedSphere::detectSphere()
 {
-    Mat lImage;
-    return lImage;
+    Mat lImage, lBuffer;
+
+    // Convert the source image to grayscale
+    cvtColor(mImage, lBuffer, CV_BGR2GRAY);
+    GaussianBlur(lBuffer, lBuffer, Size(3,3), 2, 2);
+    equalizeHist(lBuffer,lBuffer);
+
+    // Detect the circles
+    vector<Vec3f> lCircles;
+    HoughCircles(lBuffer, lCircles, CV_HOUGH_GRADIENT, 2, lBuffer.cols, 200, 150, lBuffer.rows/8, lBuffer.rows);
+
+    // If no sphere has ben detected ...
+    if(lCircles.size() == 0)
+        return Vec3f(0.f, 0.f, 0.f);
+
+    // We check that the circle fits in the image
+    if(lCircles[0][0]+lCircles[0][2] > mImage.cols || lCircles[0][0]-lCircles[0][2] < 0
+            || lCircles[0][1]+lCircles[0][2] > mImage.rows || lCircles[0][1]-lCircles[0][2] < 0)
+        return Vec3f(0.f, 0.f, 0.f);
+
+    for(size_t i=0; i<lCircles.size(); i++)
+    {
+        circle(mImage, Point(lCircles[i][0], lCircles[i][1]), 3, Scalar(0, 255, 0));
+        circle(mImage, Point(lCircles[i][0], lCircles[i][1]), lCircles[i][2], Scalar(0, 0, 255));
+    }
+#ifdef _DEBUG
+    // Draw the circles on the input image
+    lImage = mImage.clone();
+    for(size_t i=0; i<lCircles.size(); i++)
+    {
+        circle(lImage, Point(lCircles[i][0], lCircles[i][1]), 3, Scalar(0, 255, 0));
+        circle(lImage, Point(lCircles[i][0], lCircles[i][1]), lCircles[i][2], Scalar(0, 0, 255));
+    }
+    imwrite("_debugCircles.png", lImage);
+    imwrite("_debugCirclesGray.png", lBuffer);
+#endif
+
+    return lCircles[0];
 }
 
 /*******************************************/
@@ -350,4 +410,5 @@ void chromedSphere::projectionMapFromDirections()
             }
         }
     }
+//    mMap = lBackMap.clone();
 }

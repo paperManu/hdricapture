@@ -7,7 +7,7 @@
 
 #include <opencv2/opencv.hpp>
 
-#define _DEBUG
+//#define _DEBUG
 
 using namespace cv;
 
@@ -25,7 +25,7 @@ public:
     ~chromedSphere();
 
     // Set and retrieve lightprobe
-    bool setProbe(Mat* pImage, float pFOV, Vec3f pSphere); // pFOV in degree, see mSphere for pSphere
+    bool setProbe(Mat* pImage, float pFOV, Vec3f pSphere = Vec3f(0.f, 0.f, 0.f)); // pFOV in degree, see mSphere for pSphere
     Mat getConvertedProbe();
 
     // Sets various parameters
@@ -53,7 +53,7 @@ private:
     /***************************/
     // Methods
     // Detect the chromed sphere
-    Mat detectSphere();
+    Vec3f detectSphere();
 
     // Distance from position and size of the sphere on the image
     void distanceFromCamera();

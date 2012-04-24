@@ -74,31 +74,42 @@ int main(int argc, char** argv)
     lCamera.setGain(lGain);
     lCamera.setFrameRate(7.5);
 
-    Mat lFrame;
+    Mat lFrame, lProbe;
 
     if(lProbeMode == true)
     {
         chromedSphere lSphere;
 
-        double lShutterSpeed = 15;
+        double lShutterSpeed = 30;
 
         lCamera.setShutter(lShutterSpeed);
         lCamera.setGamma(2.2f);
 
-        // Image capture
-        lFrame = lCamera.getImage();
-
-        imwrite("capture.png", lFrame);
-
-        // Setting the light probe
         lSphere.setProjection(eEquirectangular);
         lSphere.setSphereSize(50.8f);
-        lSphere.setProbe(&lFrame, 52.8f, Vec3f(634.f, 444.f, 260.f));
 
-        Mat lPano;
-        lPano = lSphere.getConvertedProbe();
+        for(;;)
+        {
+            // Image capture
+            lFrame = lCamera.getImage();
 
-        imwrite("panorama.png", lPano);
+            // Setting the light probe
+            Mat lPano = Mat::zeros(256, 512, lFrame.type());
+
+            if(lSphere.setProbe(&lFrame, 52.8f))
+                lPano = lSphere.getConvertedProbe();
+
+            imshow("frame", lFrame);
+            imshow("probe", lPano);
+            //imwrite("capture.png", lFrame);
+            //imwrite("panorama.png", lPano);
+
+            int lKey = waitKey(5);
+            if(lKey >= 0)
+                break;
+        }
+
+        lCamera.close();
 
         return 0;
     }
