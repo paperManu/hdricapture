@@ -5,6 +5,8 @@ using namespace paper;
 /*******************************************/
 chromedSphere::chromedSphere()
 {
+    mTrackingLength = 5;
+    mThreshold = 2;
 }
 
 /*******************************************/
@@ -15,13 +17,15 @@ chromedSphere::~chromedSphere()
 /*******************************************/
 bool chromedSphere::setProbe(Mat *pImage, float pFOV, Vec3f pSphere)
 {
+    bool lReturn;
+
     if(pImage == NULL)
         return false;
     if(pFOV <= 0)
         return false;
 
     // Copying the input image
-    mImage = *pImage;
+    mImage = pImage->clone();
     mFOV = pFOV*M_PI/180.f;
 
     // If the sphere is not specified, we detect it
@@ -32,7 +36,10 @@ bool chromedSphere::setProbe(Mat *pImage, float pFOV, Vec3f pSphere)
 
     // If no sphere is detected, we indicate so.
     if(mSphere[2] == 0.f)
-        return false;
+        lReturn &= false;
+
+    // Filter the position of the sphere;
+    mSphere = filterSphere(mSphere);
 
     // Position and size of the sphere on the image are given
     // We use that to estimate its distance from the camera
@@ -42,6 +49,21 @@ bool chromedSphere::setProbe(Mat *pImage, float pFOV, Vec3f pSphere)
     mSphereImage = cropImage();
 
     // Compute the transformation map
+    createTransformationMap();
+
+    return lReturn;
+}
+
+/*******************************************/
+bool chromedSphere::setProbe(Mat *pImage)
+{
+    if(pImage == NULL)
+        return false;
+
+    mImage = pImage->clone();
+
+    distanceFromCamera();
+    mSphereImage = cropImage();
     createTransformationMap();
 
     return true;
@@ -92,6 +114,13 @@ void chromedSphere::setProjection(projection pProjection)
 }
 
 /*******************************************/
+void chromedSphere::setTrackingLength(unsigned int pLength, float pThreshold)
+{
+    mTrackingLength = pLength;
+    mThreshold = pThreshold;
+}
+
+/*******************************************/
 Vec3f chromedSphere::detectSphere()
 {
     Mat lImage, lBuffer;
@@ -114,11 +143,6 @@ Vec3f chromedSphere::detectSphere()
             || lCircles[0][1]+lCircles[0][2] > mImage.rows || lCircles[0][1]-lCircles[0][2] < 0)
         return Vec3f(0.f, 0.f, 0.f);
 
-    for(size_t i=0; i<lCircles.size(); i++)
-    {
-        circle(mImage, Point(lCircles[i][0], lCircles[i][1]), 3, Scalar(0, 255, 0));
-        circle(mImage, Point(lCircles[i][0], lCircles[i][1]), lCircles[i][2], Scalar(0, 0, 255));
-    }
 #ifdef _DEBUG
     // Draw the circles on the input image
     lImage = mImage.clone();
@@ -132,6 +156,87 @@ Vec3f chromedSphere::detectSphere()
 #endif
 
     return lCircles[0];
+}
+
+/*******************************************/
+Vec3f chromedSphere::filterSphere(Vec3f pNewSphere)
+{
+    // Added the new value to the vector
+    // We test if the new value is valid
+    if(pNewSphere[2] != 0.f)
+    {
+        if(mSpherePositions.size() == (size_t)mTrackingLength)
+            mSpherePositions.erase(mSpherePositions.begin());
+
+        mSpherePositions.push_back(pNewSphere);
+    }
+    // If no sphere was detected till now,
+    // and the new one is not ok
+    else if(mSpherePositions.size() == (size_t)0)
+    {
+        return Vec3f(0.f, 0.f, 0.f);
+    }
+
+    // Calculating the standard deviation
+    Vec3f lSum = Vec3f(0.f, 0.f, 0.f);
+    Vec3f lSum2 = Vec3f(0.f, 0.f, 0.f);
+    for(unsigned int index=0; index<(unsigned int)mSpherePositions.size(); index++)
+    {
+        lSum += mSpherePositions[index];
+        lSum2 += mSpherePositions[index].mul(mSpherePositions[index]);
+    }
+    lSum *= (1.f/(float)mSpherePositions.size());
+    lSum2 *= (1.f/(float)mSpherePositions.size());
+
+    Vec3f lSigma;
+    lSigma[0] = sqrtf(lSum2[0]-lSum[0]*lSum[0]);
+    lSigma[1] = sqrtf(lSum2[1]-lSum[1]*lSum[1]);
+    lSigma[2] = sqrtf(lSum2[2]-lSum[2]*lSum[2]);
+
+    // We eliminate values too far from the mean, according to sigma
+    Vec3f lFiltered = Vec3f(0.f, 0.f, 0.f);
+    for(unsigned int index=0; index<(unsigned int)mSpherePositions.size(); index++)
+    {
+        if(mSpherePositions[index][0]-lSum[0] > 2*lSigma[0]
+                || mSpherePositions[index][1]-lSum[1] > 2*lSigma[1]
+                || mSpherePositions[index][2]-lSum[2] > 2*lSigma[2])
+        {
+#ifdef _DEBUG
+            std::cout << "Erased!" << std::endl;
+#endif
+            mSpherePositions.erase(mSpherePositions.begin()+index);
+            index--;
+        }
+        else
+        {
+            lFiltered += mSpherePositions[index];
+        }
+    }
+#ifdef _DEBUG
+    std::cout << "Length: " << (int)mSpherePositions.size() << std::endl;
+#endif
+    lFiltered *= (1.f/(float)mSpherePositions.size());
+
+    // We check if the new position is farther than mThreshold*lSigma to the mean center
+    // No check on the radius as the hough transform is not precise enough for it
+    if(pNewSphere[2] != 0.f)
+    {
+        float lDistance = sqrtf(powf(pNewSphere[0]-lFiltered[0], 2.f)+powf(pNewSphere[1]-lFiltered[1], 2.f));
+        float lSigmaDist = sqrtf(lSigma[0]*lSigma[0]+lSigma[1]*lSigma[1]);
+        if((lDistance > mThreshold*lSigmaDist) && !(mThreshold == 0))
+        {
+            // We moved too far away, reset averager
+#ifdef _DEBUG
+            std::cout << "Reset!" << std::endl;
+#endif
+            mSpherePositions.clear();
+            mSpherePositions.push_back(pNewSphere);
+            return pNewSphere;
+        }
+    }
+
+    // Else, we return the mean value
+    return lFiltered;
 }
 
 /*******************************************/
@@ -265,9 +370,15 @@ Vec2f chromedSphere::directionFromViewAngle(Vec2f pAngle)
     lC = -mCameraDistance;
     lR = mSphereDiameter/2.f;
 
+    // Precomputing some useful values
+    float lCosA = cosf(lA);
+    float lCosB = cosf(lB);
+    float lCos2A = cosf(2*lA);
+    float lCos2B = cosf(2*lB);
+
     // First we verify that the pixel is on the sphere
     // (although this test should have been done before)
-    float lDelta = cos(lA)*cos(lA)*cos(lB)*cos(lB)*(-2*lC*lC+3*lR*lR+lR*lR*cos(2*lB)+cos(2*lA)*(lR*lR+(2*lC*lC-lR*lR)*cos(2*lB)));
+    float lDelta = lCosA*lCosA*lCosB*lCosB*(-2*lC*lC+3*lR*lR+lR*lR*lCos2B+lCos2A*(lR*lR+(2*lC*lC-lR*lR)*lCos2B));
     if(lDelta < 0.f)
     {
         // not on the sphere: no projection!
@@ -276,19 +387,19 @@ Vec2f chromedSphere::directionFromViewAngle(Vec2f pAngle)
 
     // We can safely calculate the t parameter
     float lNum, lDenom;
-    lNum = 4*lC+4*lC*cos(2*lA)+2*lC*cos(2*lA-2*lB)+4*lC*cos(2*lB)+2*lC*cos(2*(lA+lB));
-    lDenom = 2*(-6-2*cos(2*lA)+cos(2*lA-2*lB)-2*cos(2*lB)+cos(2*(lA+lB)));
+    lNum = 4*lC+4*lC*lCos2A+2*lC*cosf(2*lA-2*lB)+4*lC*lCos2B+2*lC*cosf(2*(lA+lB));
+    lDenom = 2*(-6-2*lCos2A+cosf(2*lA-2*lB)-2*lCos2B+cosf(2*(lA+lB)));
     float lT;
     if(lDenom > 0.f)
-        lT = (lNum-8*sqrt(lDelta))/lDenom;
+        lT = (lNum-8*sqrtf(lDelta))/lDenom;
     else
-        lT = (lNum+8*sqrt(lDelta))/lDenom;
+        lT = (lNum+8*sqrtf(lDelta))/lDenom;
 
     // And we calculte the point of impact
     float lX, lY, lZ;
     lX = lC+lT;
-    lY = lT*tan(lA);
-    lZ = lT*tan(lB);
+    lY = lT*tanf(lA);
+    lZ = lT*tanf(lB);
 
     // Now, we create a base to project the ray from the camera on
     Vec3f lU, lV, lW;
@@ -311,7 +422,7 @@ Vec2f chromedSphere::directionFromViewAngle(Vec2f pAngle)
     Vec3f lOutDir = lNewCoords[0]*lU + lNewCoords[1]*lV + lNewCoords[2]*lW;
 
     // Calculate Euler angles from this new direction
-    lOutDir = lOutDir*(1/sqrt(lOutDir.dot(lOutDir)));
+    lOutDir = lOutDir*(1/sqrtf(lOutDir.dot(lOutDir)));
 
     float lYaw, lPitch;
     // First, yaw
@@ -325,17 +436,17 @@ Vec2f chromedSphere::directionFromViewAngle(Vec2f pAngle)
     else if(lOutDir[0] > 0.f)
     {
         if(lOutDir[1] < 0.f)
-            lYaw = asin(-lOutDir[1]/sqrt(lOutDir[0]*lOutDir[0]+lOutDir[1]*lOutDir[1]));
+            lYaw = asinf(-lOutDir[1]/sqrt(lOutDir[0]*lOutDir[0]+lOutDir[1]*lOutDir[1]));
         else
-            lYaw = 2*M_PI+asin(-lOutDir[1]/sqrt(lOutDir[0]*lOutDir[0]+lOutDir[1]*lOutDir[1]));
+            lYaw = 2*M_PI+asinf(-lOutDir[1]/sqrt(lOutDir[0]*lOutDir[0]+lOutDir[1]*lOutDir[1]));
     }
     else
     {
-        lYaw = M_PI-asin(-lOutDir[1]/sqrt(lOutDir[0]*lOutDir[0]+lOutDir[1]*lOutDir[1]));
+        lYaw = M_PI-asinf(-lOutDir[1]/sqrt(lOutDir[0]*lOutDir[0]+lOutDir[1]*lOutDir[1]));
     }
 
     // Then pitch
-    lPitch = asin(lOutDir[2]);
+    lPitch = asinf(lOutDir[2]);
 
     return Vec2f(lYaw-M_PI, lPitch);
 }
@@ -348,14 +459,18 @@ void chromedSphere::projectionMapFromDirections()
     case eEquirectangular:
         // If equirectangular, we have to scale the projection to the dimension
         // of the source probe image
+    {
+        float lWCoeff = (float)mSphereImage.cols/(2*M_PI);
+        float lHCoeff = (float)mSphereImage.rows/(2*M_PI);
         for(int x=0; x<mSphereImage.cols; x++)
         {
             for(int y=0; y<mSphereImage.rows; y++)
             {
-                mMap.at<Vec2f>(y,x)[0] = (mMap.at<Vec2f>(y,x)[0]+M_PI)*(float)mSphereImage.rows/(2*M_PI);
-                mMap.at<Vec2f>(y,x)[1] = (mMap.at<Vec2f>(y,x)[1]+M_PI)*(float)mSphereImage.cols/(2*M_PI);
+                mMap.at<Vec2f>(y,x)[0] = (mMap.at<Vec2f>(y,x)[0]+M_PI)*lHCoeff;
+                mMap.at<Vec2f>(y,x)[1] = (mMap.at<Vec2f>(y,x)[1]+M_PI)*lWCoeff;
             }
         }
+    }
         break;
     default:
         return;
@@ -384,9 +499,21 @@ void chromedSphere::projectionMapFromDirections()
     }
     // We need to filter the result to fill the holes
     Mat lBuffer = Mat::zeros(mMap.rows, mMap.cols, mMap.type());
+
+    int lTop, lBottom;
+    switch(mProjection)
+    {
+    case eEquirectangular:
+        lTop = mMap.rows*3/4;
+        lBottom = mMap.rows/4;
+    default:
+        lTop = mMap.rows-1;
+        lBottom = 1;
+    }
+
     for(int x=1; x<mMap.cols-1; x++)
     {
-        for(int y=1; y<mMap.rows-1; y++)
+        for(int y=lBottom; y<lTop; y++)
         {
             if(lBackMap.at<Vec2f>(y,x) == Vec2f(0.f, 0.f))
             {

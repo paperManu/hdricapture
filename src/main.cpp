@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <opencv2/opencv.hpp>
 #include <boost/lexical_cast.hpp>
+#include <boost/thread.hpp>
 #include "rgbe.h"
 
 #include "hdribuilder.h"
@@ -12,6 +13,34 @@ using namespace std;
 using namespace cv;
 using namespace paper;
 
+boost::mutex gMutex;
+Mat gFrame;
+
+/*************************************/
+boost::thread probe()
+{
+    chromedSphere lSphere;
+
+    lSphere.setProjection(eEquirectangular);
+    lSphere.setSphereSize(50.8f);
+
+    lSphere.setTrackingLength(30, 3);
+
+    for(;;)
+    {
+        gMutex.lock();
+        lSphere.setProbe(&gFrame, 52.8f);
+        gMutex.unlock();
+
+        Mat lPano = lSphere.getConvertedProbe();
+        imshow("probe", lPano);
+        usleep(10);
+    }
+
+    return boost::thread();
+}
+
+/*************************************/
 int main(int argc, char** argv)
 {
     bool lResult;
@@ -78,31 +107,20 @@ int main(int argc, char** argv)
 
     if(lProbeMode == true)
     {
-        chromedSphere lSphere;
-
-        double lShutterSpeed = 30;
+        double lShutterSpeed = 15;
 
         lCamera.setShutter(lShutterSpeed);
-        lCamera.setGamma(2.2f);
+        lCamera.setGamma(2.2f);   
 
-        lSphere.setProjection(eEquirectangular);
-        lSphere.setSphereSize(50.8f);
+        boost::thread lThread=probe();
 
         for(;;)
         {
             // Image capture
-            lFrame = lCamera.getImage();
-
-            // Setting the light probe
-            Mat lPano = Mat::zeros(256, 512, lFrame.type());
-
-            if(lSphere.setProbe(&lFrame, 52.8f))
-                lPano = lSphere.getConvertedProbe();
-
-            imshow("frame", lFrame);
-            imshow("probe", lPano);
-            //imwrite("capture.png", lFrame);
-            //imwrite("panorama.png", lPano);
+            gMutex.lock();
+            gFrame = lCamera.getImage();
+            imshow("frame", gFrame);
+            gMutex.unlock();
 
             int lKey = waitKey(5);
             if(lKey >= 0)
