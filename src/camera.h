@@ -2,6 +2,7 @@
 #define CAMERA_H
 
 #include "opencv2/opencv.hpp"
+#include "lcms2.h"
 
 using namespace cv;
 
@@ -32,6 +33,7 @@ public:
     bool setBrightness(float pBrightness);
     bool setGamma(float pGamma);
     bool setColorBalance(float pRed, float pBlue); // between 0.f and 2.f
+    bool setICCProfiles(char* pInProfile, char* pOutProfile); // set an ICC profile for color correction
 
     bool setWidth(unsigned int pWidth);
     bool setHeight(unsigned int pHeight);
@@ -51,10 +53,14 @@ private:
     VideoCapture mCamera;
     cameraType mCameraType;
 
+    // Camera parameters
     float mAperture;
     float mShutter;
     float mDefaultISO;
     float mGain;
+
+    // ICC related attributes
+    cmsHTRANSFORM mICCTransform;
 };
 }
 

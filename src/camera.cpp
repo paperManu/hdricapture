@@ -213,6 +213,12 @@ bool camera::setColorBalance(float pRed, float pBlue)
 }
 
 /*******************************************/
+bool camera::setICCProfiles(char *pInProfile, char *pOutProfile)
+{
+    return true;
+}
+
+/*******************************************/
 bool camera::setWidth(unsigned int pWidth)
 {
     return mCamera.set(CV_CAP_PROP_FRAME_WIDTH, pWidth);

@@ -25,8 +25,8 @@ public:
     ~chromedSphere();
 
     // Set and retrieve lightprobe
-    bool setProbe(Mat* pImage, float pFOV, Vec3f pSphere = Vec3f(0.f, 0.f, 0.f)); // pFOV in degree, see mSphere for pSphere
-    bool setProbe(Mat* pImage); // Set a new probe while knowing the sphere position has not changed
+    bool setProbe(Mat pImage, float pFOV, Vec3f pSphere = Vec3f(0.f, 0.f, 0.f)); // pFOV in degree, see mSphere for pSphere
+    bool setProbe(Mat pImage); // Set a new probe while knowing the sphere position has not changed
     Mat getConvertedProbe();
 
     // Sets various parameters

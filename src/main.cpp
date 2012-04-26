@@ -15,9 +15,12 @@ using namespace paper;
 
 boost::mutex gMutex;
 Mat gFrame;
+bool gFrameUpdated;
+bool gStopAll;
+bool gFixSphere;
 
 /*************************************/
-boost::thread probe()
+void probe()
 {
     chromedSphere lSphere;
 
@@ -26,18 +29,40 @@ boost::thread probe()
 
     lSphere.setTrackingLength(30, 3);
 
+    bool lStop = false;
+    bool lUpdated = false;
+    bool lFixSphere = false;
+    Mat lFrame;
     for(;;)
     {
         gMutex.lock();
-        lSphere.setProbe(&gFrame, 52.8f);
+        lUpdated = gFrameUpdated;
+        lFixSphere = gFixSphere;
+        if(gFrameUpdated)
+        {
+            lFrame = gFrame.clone();
+            gFrameUpdated = false;
+        }
         gMutex.unlock();
+
+        if(lUpdated)
+        {
+            if(lFixSphere)
+                lSphere.setProbe(gFrame);
+            else
+                lSphere.setProbe(gFrame, 52.8f);
+        }
 
         Mat lPano = lSphere.getConvertedProbe();
         imshow("probe", lPano);
-        usleep(10);
-    }
+        usleep(1);
 
-    return boost::thread();
+        gMutex.lock();
+        lStop = gStopAll;
+        gMutex.unlock();
+        if(lStop)
+            break;
+    }
 }
 
 /*************************************/
@@ -55,6 +80,7 @@ int main(int argc, char** argv)
     float lISO = 100.0f;
     float lStopSteps = 1.0f;
     float lGain = 0.0f;
+    bool lGamma = false;
 
     if(argc < 2)
     {
@@ -105,34 +131,84 @@ int main(int argc, char** argv)
 
     Mat lFrame, lProbe;
 
-    if(lProbeMode == true)
+    if(lViewMode || lProbeMode)
     {
         double lShutterSpeed = 15;
 
         lCamera.setShutter(lShutterSpeed);
-        lCamera.setGamma(2.2f);   
 
-        boost::thread lThread=probe();
+        boost::thread lThread;
+
+        if(lProbeMode)
+        {
+            gStopAll = false;
+            gFixSphere = false;
+
+            lThread = boost::thread(&probe);
+        }
 
         for(;;)
         {
             // Image capture
             gMutex.lock();
             gFrame = lCamera.getImage();
+            gFrameUpdated = true;
             imshow("frame", gFrame);
             gMutex.unlock();
 
             int lKey = waitKey(5);
             if(lKey >= 0)
-                break;
+            {
+                if(lKey == 'f')
+                {
+                    gMutex.lock();
+                    gFixSphere = !gFixSphere;
+                    gMutex.unlock();
+                }
+                else if(lKey == 'm')
+                {
+                    lShutterSpeed = min(lShutterSpeed*2.0, 5000.0);
+                    lCamera.setShutter(lShutterSpeed);
+                }
+                else if(lKey == 'p')
+                {
+                    lShutterSpeed = max(lShutterSpeed/2.0, 7.5);
+                    lCamera.setShutter(lShutterSpeed);
+                }
+                else if(lKey == 's')
+                {
+                    cout << "Shot!" << endl;
+                    gMutex.lock();
+                    imwrite("capture.png", gFrame);
+                    gMutex.unlock();
+                }
+                else if(lKey == 'g')
+                {
+                    if(lGamma)
+                    {
+                        lGamma = !lGamma;
+                        lCamera.setGamma(1.f);
+                    }
+                    else
+                    {
+                        lGamma = !lGamma;
+                        lCamera.setGamma(2.2f);
+                    }
+                }
+                else
+                {
+                    gMutex.lock();
+                    gStopAll = true;
+                    gMutex.unlock();
+                    break;
+                }
+            }
         }
 
-        lCamera.close();
-
-        return 0;
+        if(lProbeMode)
+            lThread.join();
     }
-
-    if(lViewMode == false)
+    else if(!lViewMode)
     {
         hdriBuilder lHDRiBuilder;
         double lShutterSpeed = 1.f;
@@ -192,43 +268,6 @@ int main(int argc, char** argv)
                 RGBE_WritePixels(lFile, (float*)lHDRi.data, lHDRi.rows*lHDRi.cols);
             }
             fclose(lFile);
-        }
-    }
-    else
-    {
-        double lShutterSpeed = 60;
-
-        lCamera.setShutter(lShutterSpeed);
-        lCamera.setGamma(2.2f);
-
-        for(;;)
-        {
-            lFrame = lCamera.getImage();
-            imshow("frame", lFrame);
-
-            int lKey = waitKey(5);
-            if(lKey >= 0)
-            {
-                if(lKey == 'm')
-                {
-                    lShutterSpeed = min(lShutterSpeed*2.0, 5000.0);
-                    lCamera.setShutter(lShutterSpeed);
-                }
-                else if(lKey == 'p')
-                {
-                    lShutterSpeed = max(lShutterSpeed/2.0, 7.5);
-                    lCamera.setShutter(lShutterSpeed);
-                }
-                else if(lKey == 's')
-                {
-                    cout << "Shot!" << endl;
-                    imwrite("capture.png", lFrame);
-                }
-                else
-                {
-                    break;
-                }
-            }
         }
     }
 

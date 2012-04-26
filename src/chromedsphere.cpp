@@ -15,17 +15,17 @@ chromedSphere::~chromedSphere()
 }
 
 /*******************************************/
-bool chromedSphere::setProbe(Mat *pImage, float pFOV, Vec3f pSphere)
+bool chromedSphere::setProbe(Mat pImage, float pFOV, Vec3f pSphere)
 {
     bool lReturn;
 
-    if(pImage == NULL)
+    if(pImage.rows == 0)
         return false;
     if(pFOV <= 0)
         return false;
 
     // Copying the input image
-    mImage = pImage->clone();
+    mImage = pImage;
     mFOV = pFOV*M_PI/180.f;
 
     // If the sphere is not specified, we detect it
@@ -55,12 +55,12 @@ bool chromedSphere::setProbe(Mat *pImage, float pFOV, Vec3f pSphere)
 }
 
 /*******************************************/
-bool chromedSphere::setProbe(Mat *pImage)
+bool chromedSphere::setProbe(Mat pImage)
 {
-    if(pImage == NULL)
+    if(pImage.rows == 0)
         return false;
 
-    mImage = pImage->clone();
+    mImage = pImage;
 
     distanceFromCamera();
     mSphereImage = cropImage();
