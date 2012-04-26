@@ -15,6 +15,8 @@ camera::camera()
 /*******************************************/
 camera::~camera()
 {
+    if(mICCTransform != NULL)
+        cmsDeleteTransform(mICCTransform);
 }
 
 /*******************************************/
@@ -213,8 +215,51 @@ bool camera::setColorBalance(float pRed, float pBlue)
 }
 
 /*******************************************/
-bool camera::setICCProfiles(char *pInProfile, char *pOutProfile)
+bool camera::setICCProfiles(const char *pInProfile, const char *pOutProfile)
 {
+    cmsHPROFILE lInProfile, lOutProfile;
+    cmsUInt32Number lOutType;
+
+    // Open input profile
+    lInProfile = cmsOpenProfileFromFile(pInProfile, "r");
+
+    // Open output profile
+    if(strcmp(pOutProfile, "sRGB") == 0)
+    {
+        lOutType = TYPE_BGR_8;
+        lOutProfile = cmsCreate_sRGBProfile();
+    }
+    else if(strcmp(pOutProfile, "Lab") == 0)
+    {
+        lOutType = TYPE_Lab_8;
+        lOutProfile = cmsCreateLab2Profile(NULL);
+    }
+    else if(strcmp(pOutProfile, "Lab_E") == 0)
+    {
+        lOutType = TYPE_Lab_8;
+
+        cmsCIExyY lWhitePoint;
+        lWhitePoint.x = 1.f/3.f;
+        lWhitePoint.y = 1.f/3.f;
+        lWhitePoint.Y = 1.f;
+        lOutProfile = cmsCreateLab2Profile(&lWhitePoint);
+    }
+    else
+    {
+        lOutProfile = cmsOpenProfileFromFile(pOutProfile, "r");
+        lOutType = TYPE_BGR_8;
+    }
+
+    if(lInProfile == NULL || lOutProfile == NULL)
+        return false;
+
+    // Creating the transform
+    mICCTransform = cmsCreateTransform(lInProfile, TYPE_BGR_8, lOutProfile, lOutType, INTENT_ABSOLUTE_COLORIMETRIC, 0);
+
+    // Closing the profiles
+    cmsCloseProfile(lInProfile);
+    cmsCloseProfile(lOutProfile);
+
     return true;
 }
 
@@ -258,6 +303,19 @@ float camera::getEV()
 Mat camera::getImage()
 {
     Mat lFrame;
+
+    // Capturing the frame
     mCamera >> lFrame;
-    return lFrame;
+
+    // If specified so, correct the colorimetry
+    if(mICCTransform != NULL)
+    {
+        for(int i=0; i<lFrame.rows; i++)
+        {
+            Mat lRow = lFrame.row(i);
+            cmsDoTransform(mICCTransform, lRow.data, lRow.data, lRow.step/lRow.channels());
+        }
+    }
+
+    return lFrame.clone();
 }

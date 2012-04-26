@@ -115,6 +115,10 @@ int main(int argc, char** argv)
             {
                 lProbeMode = true;
             }
+            else if(strcmp(argv[i], "--profile") == 0)
+            {
+                lCamera.setICCProfiles("profile.icc", "sRGB");
+            }
         }
     }
 

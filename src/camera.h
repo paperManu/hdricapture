@@ -33,7 +33,7 @@ public:
     bool setBrightness(float pBrightness);
     bool setGamma(float pGamma);
     bool setColorBalance(float pRed, float pBlue); // between 0.f and 2.f
-    bool setICCProfiles(char* pInProfile, char* pOutProfile); // set an ICC profile for color correction
+    bool setICCProfiles(const char* pInProfile, const char* pOutProfile = "sRGB"); // set an ICC profile for color correction
 
     bool setWidth(unsigned int pWidth);
     bool setHeight(unsigned int pHeight);
