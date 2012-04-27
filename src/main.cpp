@@ -13,11 +13,13 @@ using namespace std;
 using namespace cv;
 using namespace paper;
 
+float gFOV;
 boost::mutex gMutex;
 Mat gFrame;
 bool gFrameUpdated;
 bool gStopAll;
 bool gFixSphere;
+bool gHDR;
 
 /*************************************/
 void probe()
@@ -50,7 +52,7 @@ void probe()
             if(lFixSphere)
                 lSphere.setProbe(gFrame);
             else
-                lSphere.setProbe(gFrame, 52.8f);
+                lSphere.setProbe(gFrame, gFOV);
         }
 
         Mat lPano = lSphere.getConvertedProbe();
@@ -81,6 +83,10 @@ int main(int argc, char** argv)
     float lStopSteps = 1.0f;
     float lGain = 0.0f;
     bool lGamma = false;
+
+    gHDR = false;
+    gStopAll = false;
+    gFixSphere = false;
 
     if(argc < 2)
     {
@@ -133,21 +139,23 @@ int main(int argc, char** argv)
     lCamera.setGain(lGain);
     lCamera.setFrameRate(7.5);
 
+    lCamera.setFOV(52.8f);
+    lCamera.setCalibration("camera.xml");
+    gFOV = lCamera.getFOV();
+
     Mat lFrame, lProbe;
 
-    if(lViewMode || lProbeMode)
+    if(lViewMode)
     {
-        double lShutterSpeed = 15;
+        unsigned int lNbrShot = 0;
 
+        double lShutterSpeed = 15.f;
         lCamera.setShutter(lShutterSpeed);
 
         boost::thread lThread;
 
         if(lProbeMode)
         {
-            gStopAll = false;
-            gFixSphere = false;
-
             lThread = boost::thread(&probe);
         }
 
@@ -183,7 +191,15 @@ int main(int argc, char** argv)
                 {
                     cout << "Shot!" << endl;
                     gMutex.lock();
-                    imwrite("capture.png", gFrame);
+                    string lStr = "capture_" + boost::lexical_cast<std::string>(lNbrShot) + ".png";
+                    imwrite(lStr.c_str(), gFrame);
+                    lNbrShot++;
+                    gMutex.unlock();
+                }
+                else if(lKey == 'h')
+                {
+                    gMutex.lock();
+                    gHDR = true;
                     gMutex.unlock();
                 }
                 else if(lKey == 'g')
@@ -220,6 +236,27 @@ int main(int argc, char** argv)
         // Set gamma to 1
         lCamera.setGamma(1.f);
 
+        chromedSphere* lSphere;
+
+        // If we want to extract the pano from a chromed sphere
+        if(lProbeMode)
+        {
+            // Set various parameters
+            lSphere = new chromedSphere;
+            lSphere->setProjection(eEquirectangular);
+            lSphere->setSphereSize(50.8f);
+            lSphere->setTrackingLength(30, 3);
+            lCamera.setShutter(lShutterSpeed);
+
+            // Detect the sphere
+            for(int i=0; i<30; i++)
+            {
+                lFrame = lCamera.getImage();
+                lSphere->setProbe(lFrame, 50.8f);
+                usleep(100);
+            }
+        }
+
         for(int i=0; i<lLdrNbr; i++)
         {
             lCamera.setShutter(lShutterSpeed);
@@ -234,6 +271,16 @@ int main(int argc, char** argv)
             }
             lFrame = lCamera.getImage();
 
+            string lStr = "img_probe_" + boost::lexical_cast<std::string>(i) + ".bmp";
+            lResult = imwrite(lStr, lFrame);
+
+            if(lProbeMode)
+            {
+                // Extract the panoramic probe
+                lSphere->setProbe(lFrame);
+                lFrame = lSphere->getConvertedProbe();
+            }
+
             if(lCreateHDRi == true)
             {
                 Mat lFrame_RGB(lFrame.size(), lFrame.type());
@@ -245,7 +292,7 @@ int main(int argc, char** argv)
                     cout << "Error while adding LDRi." << endl;
             }
 
-            string lStr = "img_" + boost::lexical_cast<std::string>(i) + ".bmp";
+            lStr = "img_" + boost::lexical_cast<std::string>(i) + ".bmp";
             lResult = imwrite(lStr, lFrame);
             if(!lResult)
             {

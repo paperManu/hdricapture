@@ -10,6 +10,9 @@ camera::camera()
     mShutter = 60.f;
     mGain = 0.f;
     mDefaultISO = 100.f;
+    mFOV = 50.f;
+
+    mICCTransform = NULL;
 }
 
 /*******************************************/
@@ -264,6 +267,25 @@ bool camera::setICCProfiles(const char *pInProfile, const char *pOutProfile)
 }
 
 /*******************************************/
+bool camera::setCalibration(const char *pCalibFile)
+{
+    FileStorage lFile;
+    lFile.open(pCalibFile, FileStorage::READ);
+    if(!lFile.isOpened())
+    {
+        std::cerr << "Error while opening calibration file." << std::endl;
+        return false;
+    }
+
+    lFile["Camera_Matrix"] >> mCameraMat;
+    lFile["Distortion_Coefficients"] >> mDistortionMat;
+
+    lFile.release();
+
+    return true;
+}
+
+/*******************************************/
 bool camera::setWidth(unsigned int pWidth)
 {
     return mCamera.set(CV_CAP_PROP_FRAME_WIDTH, pWidth);
@@ -273,6 +295,13 @@ bool camera::setWidth(unsigned int pWidth)
 bool camera::setHeight(unsigned int pHeight)
 {
     return mCamera.set(CV_CAP_PROP_FRAME_HEIGHT, pHeight);
+}
+
+/*******************************************/
+void camera::setFOV(float pFOV)
+{
+    if(pFOV > 0.f)
+        mFOV = pFOV;
 }
 
 /*******************************************/
@@ -300,6 +329,12 @@ float camera::getEV()
 }
 
 /*******************************************/
+float camera::getFOV()
+{
+    return mFOV;
+}
+
+/*******************************************/
 Mat camera::getImage()
 {
     Mat lFrame;
@@ -314,6 +349,26 @@ Mat camera::getImage()
         {
             Mat lRow = lFrame.row(i);
             cmsDoTransform(mICCTransform, lRow.data, lRow.data, lRow.step/lRow.channels());
+        }
+    }
+
+    // Same for the distortion
+    if(mCameraMat.rows != 0)
+    {
+        if(mRectifyMap1.rows == 0 || mRectifyMap2.rows == 0)
+        {;
+            Mat lTempMat;
+            Size lImageSize(lFrame.cols, lFrame.rows);
+            initUndistortRectifyMap(mCameraMat, mDistortionMat, Mat(), mCameraMat, lImageSize, CV_16SC2, mRectifyMap1, mRectifyMap2);
+
+            mFOV = 2*atan(((float)lImageSize.width/2.f)/(mCameraMat.at<double>(0,0)));
+        }
+
+        if(mRectifyMap1.rows != 0 && mRectifyMap2.rows != 0)
+        {
+            Mat lBuffer;
+            remap(lFrame, lBuffer, mRectifyMap1, mRectifyMap2, INTER_LINEAR, BORDER_CONSTANT, Scalar(0,0,0));
+            lFrame = lBuffer;
         }
     }
 

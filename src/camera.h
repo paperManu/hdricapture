@@ -34,14 +34,17 @@ public:
     bool setGamma(float pGamma);
     bool setColorBalance(float pRed, float pBlue); // between 0.f and 2.f
     bool setICCProfiles(const char* pInProfile, const char* pOutProfile = "sRGB"); // set an ICC profile for color correction
+    bool setCalibration(const char* pCalibFile); // set a calibration file containing deformation informations on the camera+lense
 
     bool setWidth(unsigned int pWidth);
     bool setHeight(unsigned int pHeight);
+    void setFOV(float pFOV); // set the field of view of the camera. Automatically calculated if calibration is set
 
     // Returns camera parameters
     float getAperture();
     float getShutter();
     float getGain();
+    float getFOV();
 
     // Return the exposure value (from the current settings)
     float getEV();
@@ -58,9 +61,14 @@ private:
     float mShutter;
     float mDefaultISO;
     float mGain;
+    float mFOV;
 
     // ICC related attributes
     cmsHTRANSFORM mICCTransform;
+
+    // Lense deformation correction
+    Mat mCameraMat, mDistortionMat;
+    Mat mRectifyMap1, mRectifyMap2;
 };
 }
 

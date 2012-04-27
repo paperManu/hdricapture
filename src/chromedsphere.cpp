@@ -537,5 +537,4 @@ void chromedSphere::projectionMapFromDirections()
             }
         }
     }
-//    mMap = lBackMap.clone();
 }
