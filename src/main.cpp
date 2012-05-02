@@ -19,12 +19,14 @@ Mat gFrame;
 bool gFrameUpdated;
 bool gStopAll;
 bool gFixSphere;
-bool gHDR;
+bool gHDR, gHDR_done;
+float gEV;
 
 /*************************************/
 void probe()
 {
     chromedSphere lSphere;
+    hdriBuilder lHDRiBuilder;
 
     lSphere.setProjection(eEquirectangular);
     lSphere.setSphereSize(50.8f);
@@ -34,7 +36,11 @@ void probe()
     bool lStop = false;
     bool lUpdated = false;
     bool lFixSphere = false;
-    Mat lFrame;
+    bool lHDR = false;
+    bool lHDR_done = false;
+    float lEV;
+    Mat lFrame, lPano;
+
     for(;;)
     {
         gMutex.lock();
@@ -45,17 +51,51 @@ void probe()
             lFrame = gFrame.clone();
             gFrameUpdated = false;
         }
+        lHDR = gHDR;
+        lHDR_done = gHDR_done;
+        lEV = gEV;
         gMutex.unlock();
 
         if(lUpdated)
         {
             if(lFixSphere)
-                lSphere.setProbe(gFrame);
+                lSphere.setProbe(gFrame, true);
             else
                 lSphere.setProbe(gFrame, gFOV);
+
+            lPano = lSphere.getConvertedProbe();
+
+            if(lHDR)
+            {
+                Mat lPano_RGB(lPano.size(), lPano.type());
+                cvtColor(lPano, lPano_RGB, CV_BGR2RGB);
+                if(lHDRiBuilder.addLDR(&lPano_RGB, lEV))
+                    cout << "LDRi successfully added, EV=" << lEV << endl;
+
+                string lStr;
+                lStr = "img_" + boost::lexical_cast<std::string>(lEV) + ".png";
+                imwrite(lStr, lFrame);
+            }
+
+            if(lHDR_done && lHDR)
+            {
+                if(lHDRiBuilder.computeHDRI())
+                {
+                    Mat lHDRi = lHDRiBuilder.getHDRI();
+                    FILE *lFile = fopen("hdri.hdr", "wb");
+                    if(lHDRi.isContinuous())
+                    {
+                        RGBE_WriteHeader(lFile, lHDRi.cols, lHDRi.rows, NULL);
+                        RGBE_WritePixels(lFile, (float*)lHDRi.data, lHDRi.rows*lHDRi.cols);
+                    }
+                    fclose(lFile);
+                }
+                gMutex.lock();
+                gHDR = false;
+                gMutex.unlock();
+            }
         }
 
-        Mat lPano = lSphere.getConvertedProbe();
         imshow("probe", lPano);
         usleep(1);
 
@@ -78,11 +118,12 @@ int main(int argc, char** argv)
 
     // Camera parameters
     camera lCamera;
-    float lAperture = 5.6f;
+    float lAperture = 4.0f;
     float lISO = 100.0f;
     float lStopSteps = 1.0f;
     float lGain = 0.0f;
     bool lGamma = false;
+    bool lICC = false;
 
     gHDR = false;
     gStopAll = false;
@@ -123,7 +164,7 @@ int main(int argc, char** argv)
             }
             else if(strcmp(argv[i], "--profile") == 0)
             {
-                lCamera.setICCProfiles("profile.icc", "sRGB");
+                lICC = lCamera.setICCProfiles("profile.icc", "RGB_E");
             }
         }
     }
@@ -161,12 +202,41 @@ int main(int argc, char** argv)
 
         for(;;)
         {
+
+            // If in HDR mode, we wait for the shutter to be set
+            if(gHDR)
+            {
+                for(int i=0; i<10; i++)
+                {
+                    lCamera.getImage();
+                    usleep(10000);
+                }
+            }
+
             // Image capture
             gMutex.lock();
+            gEV = lCamera.getEV();
             gFrame = lCamera.getImage();
             gFrameUpdated = true;
             imshow("frame", gFrame);
             gMutex.unlock();
+
+            if(gHDR)
+            {
+                double lOldSpeed = lShutterSpeed;
+                lShutterSpeed *= 2.f;
+                lCamera.setShutter(lShutterSpeed);
+                lShutterSpeed = lCamera.getShutter();
+                if(lOldSpeed == lShutterSpeed)
+                {
+                    gMutex.lock();
+                    gHDR_done = true;
+                    gMutex.unlock();
+
+                    lShutterSpeed = 15.f;
+                    lCamera.setShutter(lShutterSpeed);
+                }
+            }
 
             int lKey = waitKey(5);
             if(lKey >= 0)
@@ -181,11 +251,13 @@ int main(int argc, char** argv)
                 {
                     lShutterSpeed = min(lShutterSpeed*2.0, 5000.0);
                     lCamera.setShutter(lShutterSpeed);
+                    lShutterSpeed = lCamera.getShutter();
                 }
                 else if(lKey == 'p')
                 {
                     lShutterSpeed = max(lShutterSpeed/2.0, 7.5);
                     lCamera.setShutter(lShutterSpeed);
+                    lShutterSpeed = lCamera.getShutter();
                 }
                 else if(lKey == 's')
                 {
@@ -198,9 +270,18 @@ int main(int argc, char** argv)
                 }
                 else if(lKey == 'h')
                 {
-                    gMutex.lock();
-                    gHDR = true;
-                    gMutex.unlock();
+                    if(lProbeMode)
+                    {
+                        // Entering HDR creation mode
+                        gMutex.lock();
+                        gHDR = true;
+                        gHDR_done = false;
+                        gFixSphere = true;
+                        lShutterSpeed = 1.f;
+                        lCamera.setShutter(lShutterSpeed);
+                        lCamera.setGamma(1.f);
+                        gMutex.unlock();
+                    }
                 }
                 else if(lKey == 'g')
                 {
@@ -213,6 +294,17 @@ int main(int argc, char** argv)
                     {
                         lGamma = !lGamma;
                         lCamera.setGamma(2.2f);
+                    }
+                }
+                else if(lKey == 'i')
+                {
+                    if(lICC)
+                    {
+                        lICC = lCamera.setICCProfiles(NULL);
+                    }
+                    else
+                    {
+                        lICC = lCamera.setICCProfiles("profile.icc", "RGB_E");
                     }
                 }
                 else
@@ -264,10 +356,10 @@ int main(int argc, char** argv)
             lShutterSpeed = lCamera.getShutter();
 
             // Loop to empty the buffer
-            for(int j=0; j<5; j++)
+            for(int j=0; j<10; j++)
             {
                 lCamera.getImage();
-                usleep(10);
+                usleep(10000);
             }
             lFrame = lCamera.getImage();
 
@@ -277,7 +369,7 @@ int main(int argc, char** argv)
             if(lProbeMode)
             {
                 // Extract the panoramic probe
-                lSphere->setProbe(lFrame);
+                lSphere->setProbe(lFrame, true);
                 lFrame = lSphere->getConvertedProbe();
             }
 

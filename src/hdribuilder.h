@@ -22,7 +22,7 @@ public:
 
     // Adds an LDR image to the list
     // LDRi must be of type RGB8u
-    bool addLDR(Mat* pImage, float pEV);
+    bool addLDR(const Mat* pImage, float pEV);
 
     // Retrieves the HDRI
     // To call after the HDRI generation

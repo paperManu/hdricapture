@@ -18,7 +18,7 @@ hdriBuilder::~hdriBuilder()
 }
 
 /*******************************************/
-bool hdriBuilder::addLDR(Mat *pImage, float pEV)
+bool hdriBuilder::addLDR(const Mat *pImage, float pEV)
 {
     LDRi lLDRi;
 
@@ -44,7 +44,16 @@ bool hdriBuilder::addLDR(Mat *pImage, float pEV)
             return false;
         }
 
-        mLDRi.push_back(lLDRi);
+        bool lResult = true;
+        for(int i=0; i<(int)mLDRi.size(); i++)
+        {
+            if(mLDRi[i].EV == lLDRi.EV)
+                lResult = false;
+        }
+
+        if(lResult)
+            mLDRi.push_back(lLDRi);
+
         return true;
     }
 }

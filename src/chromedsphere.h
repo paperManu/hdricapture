@@ -26,7 +26,7 @@ public:
 
     // Set and retrieve lightprobe
     bool setProbe(Mat pImage, float pFOV, Vec3f pSphere = Vec3f(0.f, 0.f, 0.f)); // pFOV in degree, see mSphere for pSphere
-    bool setProbe(Mat pImage); // Set a new probe while knowing the sphere position has not changed
+    bool setProbe(Mat pImage, bool pFixed=false); // Set a new probe while knowing the sphere position has not changed
     Mat getConvertedProbe();
 
     // Sets various parameters
@@ -34,7 +34,7 @@ public:
     void setSphereReflectance(float pReflectance); // % of reflected light
     void setProjection(projection pProjection);
     void setTrackingLength(unsigned int pLength, float pThreshold); // Length of the averager for the sphere detection smoothing
-                                                           // and threshold to detect large movements and stop averaging
+                                                                    // and threshold to detect large movements and stop averaging
 
 private:
     /***************************/

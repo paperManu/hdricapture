@@ -62,9 +62,11 @@ private:
     float mDefaultISO;
     float mGain;
     float mFOV;
+    unsigned int mWidth, mHeight;
 
     // ICC related attributes
     cmsHTRANSFORM mICCTransform;
+    bool mIsLabD65;
 
     // Lense deformation correction
     Mat mCameraMat, mDistortionMat;

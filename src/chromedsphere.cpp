@@ -17,7 +17,7 @@ chromedSphere::~chromedSphere()
 /*******************************************/
 bool chromedSphere::setProbe(Mat pImage, float pFOV, Vec3f pSphere)
 {
-    bool lReturn;
+    bool lReturn = true;
 
     if(pImage.rows == 0)
         return false;
@@ -55,7 +55,7 @@ bool chromedSphere::setProbe(Mat pImage, float pFOV, Vec3f pSphere)
 }
 
 /*******************************************/
-bool chromedSphere::setProbe(Mat pImage)
+bool chromedSphere::setProbe(Mat pImage, bool pFixed)
 {
     if(pImage.rows == 0)
         return false;
@@ -64,7 +64,9 @@ bool chromedSphere::setProbe(Mat pImage)
 
     distanceFromCamera();
     mSphereImage = cropImage();
-    createTransformationMap();
+
+    if(!pFixed)
+        createTransformationMap();
 
     return true;
 }

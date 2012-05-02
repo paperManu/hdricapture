@@ -13,6 +13,7 @@ camera::camera()
     mFOV = 50.f;
 
     mICCTransform = NULL;
+    mIsLabD65 = false;
 }
 
 /*******************************************/
@@ -39,6 +40,10 @@ bool camera::open(cameraType pCamera)
             mCameraType = pCamera;
             setShutter(mShutter);
             setGain(mGain);
+
+            // Get some informations
+            mWidth = mCamera.get(CV_CAP_PROP_FRAME_WIDTH);
+            mHeight = mCamera.get(CV_CAP_PROP_FRAME_HEIGHT);
             return true;
         }
         break;
@@ -112,7 +117,7 @@ bool camera::setShutter(float pShutter)
         lResult = false;
     }
 
-    return true;
+    return lResult;
 }
 
 /*******************************************/
@@ -231,30 +236,83 @@ bool camera::setICCProfiles(const char *pInProfile, const char *pOutProfile)
     {
         lOutType = TYPE_BGR_8;
         lOutProfile = cmsCreate_sRGBProfile();
+        mIsLabD65 = false;
+    }
+    else if(strcmp(pOutProfile, "RGB_E") == 0)
+    {
+        lOutType = TYPE_BGR_8;
+
+        // We create a CIE RGB with an E white point
+        // and NO gamma curve
+        cmsCIExyY lWhitePoint = {1.f/3.f, 1.f/3.f, 1.f};
+        cmsCIExyYTRIPLE lPrimaries = {{0.7347f, 0.2653f, 1.f},{0.2738f, 0.7174f, 1.f}, {0.1666, 0.0089f, 1.f}};
+
+        cmsToneCurve* lCurve[3];
+        lCurve[0] = cmsBuildGamma(NULL, 1.f);
+        lCurve[2] = lCurve[1] = lCurve[0];
+
+        lOutProfile = cmsCreateRGBProfile(&lWhitePoint, &lPrimaries, lCurve);
+        mIsLabD65 = false;
+    }
+    else if(strcmp(pOutProfile, "RGB_D65") == 0)
+    {
+        lOutType = TYPE_BGR_8;
+
+        // We create a CIE RGB with a D65 white point
+        // and NO gamma curve
+        cmsCIExyY lWhitePoint = {0.31271f, 0.32902f, 1.f};
+        cmsCIExyYTRIPLE lPrimaries = {{0.64f, 0.33f, 1.f},{0.3f, 0.6f, 1.f}, {0.15, 0.06f, 1.f}};
+
+        cmsToneCurve* lCurve[3];
+        lCurve[0] = cmsBuildGamma(NULL, 1.f);
+        lCurve[2] = lCurve[1] = lCurve[0];
+
+        lOutProfile = cmsCreateRGBProfile(&lWhitePoint, &lPrimaries, lCurve);
+        mIsLabD65 = false;
     }
     else if(strcmp(pOutProfile, "Lab") == 0)
     {
         lOutType = TYPE_Lab_8;
         lOutProfile = cmsCreateLab2Profile(NULL);
+        mIsLabD65 = false;
     }
     else if(strcmp(pOutProfile, "Lab_E") == 0)
     {
         lOutType = TYPE_Lab_8;
 
-        cmsCIExyY lWhitePoint;
-        lWhitePoint.x = 1.f/3.f;
-        lWhitePoint.y = 1.f/3.f;
-        lWhitePoint.Y = 1.f;
+        cmsCIExyY lWhitePoint = {1.f/3.f, 1.f/3.f, 1.f};
         lOutProfile = cmsCreateLab2Profile(&lWhitePoint);
+        mIsLabD65 = false;
+    }
+    else if(strcmp(pOutProfile, "Lab_D65") == 0)
+    {
+        lOutType = TYPE_Lab_8;
+        cmsCIExyY lWhitePoint = {0.31271f, 0.32902f, 1.f};
+
+        lOutProfile = cmsCreateLab2Profile(&lWhitePoint);
+        mIsLabD65 = true;
     }
     else
     {
         lOutProfile = cmsOpenProfileFromFile(pOutProfile, "r");
         lOutType = TYPE_BGR_8;
+        mIsLabD65 = false;
     }
 
     if(lInProfile == NULL || lOutProfile == NULL)
+    {
+        // If profiles are NULL, we deactivate current profile
+        if(mICCTransform != NULL)
+        {
+            cmsDeleteTransform(mICCTransform);
+            mICCTransform = NULL;
+        }
+
+        cmsCloseProfile(lInProfile);
+        cmsCloseProfile(lOutProfile);
+        mIsLabD65 = false;
         return false;
+    }
 
     // Creating the transform
     mICCTransform = cmsCreateTransform(lInProfile, TYPE_BGR_8, lOutProfile, lOutType, INTENT_ABSOLUTE_COLORIMETRIC, 0);
@@ -288,13 +346,19 @@ bool camera::setCalibration(const char *pCalibFile)
 /*******************************************/
 bool camera::setWidth(unsigned int pWidth)
 {
-    return mCamera.set(CV_CAP_PROP_FRAME_WIDTH, pWidth);
+    bool lReturn;
+    lReturn =  mCamera.set(CV_CAP_PROP_FRAME_WIDTH, pWidth);
+    mWidth = mCamera.get(CV_CAP_PROP_FRAME_WIDTH);
+    return lReturn;
 }
 
 /*******************************************/
 bool camera::setHeight(unsigned int pHeight)
 {
-    return mCamera.set(CV_CAP_PROP_FRAME_HEIGHT, pHeight);
+    bool lReturn;
+    lReturn = mCamera.set(CV_CAP_PROP_FRAME_HEIGHT, pHeight);
+    mHeight = mCamera.get(CV_CAP_PROP_FRAME_HEIGHT);
+    return lReturn;
 }
 
 /*******************************************/
@@ -342,6 +406,10 @@ Mat camera::getImage()
     // Capturing the frame
     mCamera >> lFrame;
 
+    // If the frame is empty (error while capturing), we create a black frame
+    if(lFrame.rows == 0 || lFrame.cols == 0)
+        lFrame = Mat::zeros(mHeight, mWidth, CV_8UC3);
+
     // If specified so, correct the colorimetry
     if(mICCTransform != NULL)
     {
@@ -350,13 +418,19 @@ Mat camera::getImage()
             Mat lRow = lFrame.row(i);
             cmsDoTransform(mICCTransform, lRow.data, lRow.data, lRow.step/lRow.channels());
         }
+
+        if(mIsLabD65)
+        {
+            cvtColor(lFrame, lFrame, CV_Lab2BGR);
+        }
     }
 
     // Same for the distortion
     if(mCameraMat.rows != 0)
     {
+        // Check if the mapping matrices have already been calculated
         if(mRectifyMap1.rows == 0 || mRectifyMap2.rows == 0)
-        {;
+        {
             Mat lTempMat;
             Size lImageSize(lFrame.cols, lFrame.rows);
             initUndistortRectifyMap(mCameraMat, mDistortionMat, Mat(), mCameraMat, lImageSize, CV_16SC2, mRectifyMap1, mRectifyMap2);
@@ -364,6 +438,7 @@ Mat camera::getImage()
             mFOV = 2*atan(((float)lImageSize.width/2.f)/(mCameraMat.at<double>(0,0)));
         }
 
+        // Correct distortion
         if(mRectifyMap1.rows != 0 && mRectifyMap2.rows != 0)
         {
             Mat lBuffer;
