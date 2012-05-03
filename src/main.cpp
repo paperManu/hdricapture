@@ -65,7 +65,7 @@ void probe()
 
             lPano = lSphere.getConvertedProbe();
 
-            if(lHDR)
+            if(lHDR && !lHDR_done)
             {
                 Mat lPano_RGB(lPano.size(), lPano.type());
                 cvtColor(lPano, lPano_RGB, CV_BGR2RGB);
@@ -114,7 +114,7 @@ int main(int argc, char** argv)
     bool lViewMode = false;
     bool lCreateHDRi = false;
     bool lProbeMode = false;
-    int lLdrNbr = 1;
+    int lLdrNbr = 5;
 
     // Camera parameters
     camera lCamera;
@@ -124,6 +124,7 @@ int main(int argc, char** argv)
     float lGain = 0.0f;
     bool lGamma = false;
     bool lICC = false;
+    char* lICCProfile = "RGB_E";
 
     gHDR = false;
     gStopAll = false;
@@ -164,7 +165,7 @@ int main(int argc, char** argv)
             }
             else if(strcmp(argv[i], "--profile") == 0)
             {
-                lICC = lCamera.setICCProfiles("profile.icc", "RGB_E");
+                lICC = lCamera.setICCProfiles("profile.icc", lICCProfile);
             }
         }
     }
@@ -189,6 +190,7 @@ int main(int argc, char** argv)
     if(lViewMode)
     {
         unsigned int lNbrShot = 0;
+        unsigned int lHDRShots = 0;
 
         double lShutterSpeed = 15.f;
         lCamera.setShutter(lShutterSpeed);
@@ -204,7 +206,7 @@ int main(int argc, char** argv)
         {
 
             // If in HDR mode, we wait for the shutter to be set
-            if(gHDR)
+            if(gHDR && lHDRShots < lLdrNbr)
             {
                 for(int i=0; i<10; i++)
                 {
@@ -221,20 +223,19 @@ int main(int argc, char** argv)
             imshow("frame", gFrame);
             gMutex.unlock();
 
-            if(gHDR)
+            if(gHDR && lHDRShots < lLdrNbr)
             {
                 double lOldSpeed = lShutterSpeed;
-                lShutterSpeed *= 2.f;
+                lShutterSpeed *= pow(2.f, lStopSteps);
                 lCamera.setShutter(lShutterSpeed);
                 lShutterSpeed = lCamera.getShutter();
-                if(lOldSpeed == lShutterSpeed)
+                lHDRShots ++;
+
+                if(lOldSpeed == lShutterSpeed || lHDRShots >= lLdrNbr)
                 {
                     gMutex.lock();
                     gHDR_done = true;
                     gMutex.unlock();
-
-                    lShutterSpeed = 15.f;
-                    lCamera.setShutter(lShutterSpeed);
                 }
             }
 
@@ -255,7 +256,7 @@ int main(int argc, char** argv)
                 }
                 else if(lKey == 'p')
                 {
-                    lShutterSpeed = max(lShutterSpeed/2.0, 7.5);
+                    lShutterSpeed = max(lShutterSpeed/2.0, 1.0);
                     lCamera.setShutter(lShutterSpeed);
                     lShutterSpeed = lCamera.getShutter();
                 }
@@ -277,9 +278,13 @@ int main(int argc, char** argv)
                         gHDR = true;
                         gHDR_done = false;
                         gFixSphere = true;
+
                         lShutterSpeed = 1.f;
                         lCamera.setShutter(lShutterSpeed);
                         lCamera.setGamma(1.f);
+
+                        lHDRShots = 0;
+
                         gMutex.unlock();
                     }
                 }
@@ -304,7 +309,7 @@ int main(int argc, char** argv)
                     }
                     else
                     {
-                        lICC = lCamera.setICCProfiles("profile.icc", "RGB_E");
+                        lICC = lCamera.setICCProfiles("profile.icc", lICCProfile);
                     }
                 }
                 else

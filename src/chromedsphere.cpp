@@ -80,6 +80,10 @@ Mat chromedSphere::getConvertedProbe()
     if(mSphere[2] == 0.f)
         return Mat::zeros(256, 512, mImage.type());
 
+    // Set the (0,0) pixel to black
+    Mat lPixel = mSphereImage(Rect(0, 0, 1, 1));
+    lPixel.setTo(0);
+
     // Correct the probe
     remap(mSphereImage, lImage, mMap, Mat(), CV_INTER_LINEAR, BORDER_CONSTANT, Scalar(0, 0, 0));
 
@@ -464,6 +468,7 @@ void chromedSphere::projectionMapFromDirections()
     {
         float lWCoeff = (float)mSphereImage.cols/(2*M_PI);
         float lHCoeff = (float)mSphereImage.rows/(2*M_PI);
+
         for(int x=0; x<mSphereImage.cols; x++)
         {
             for(int y=0; y<mSphereImage.rows; y++)
@@ -479,9 +484,11 @@ void chromedSphere::projectionMapFromDirections()
     }
 
     // We have a forward map: cv::remap needs a backward one
-    // So we will create it
+    // So we will create it, as well as a mask for non-set values
     // Going through the probe ...
     Mat lBackMap = Mat::zeros(mMap.rows, mMap.cols, mMap.type());
+    Mat lMask = Mat::zeros(mMap.rows, mMap.cols, CV_8U);
+
     for(int x=0; x<mMap.cols; x++)
     {
         for(int y=0; y<mMap.rows; y++)
@@ -496,47 +503,23 @@ void chromedSphere::projectionMapFromDirections()
 
                 lBackMap.at<Vec2f>(v,u)[0] = mMap.cols-x;
                 lBackMap.at<Vec2f>(v,u)[1] = mMap.rows-y;
+
+                lMask.at<unsigned char>(v,u) = 255;
             }
         }
     }
+
+    // Mask inversion
+    lMask = 255-lMask;
+
     // We need to filter the result to fill the holes
     Mat lBuffer = Mat::zeros(mMap.rows, mMap.cols, mMap.type());
 
-    int lTop, lBottom;
-    switch(mProjection)
-    {
-    case eEquirectangular:
-        lTop = mMap.rows*3/4;
-        lBottom = mMap.rows/4;
-    default:
-        lTop = mMap.rows-1;
-        lBottom = 1;
-    }
+    // We dilate the map in a temp buffer
+    dilate(lBackMap, lBuffer, Mat(), Point(-1, -1), 4);
 
-    for(int x=1; x<mMap.cols-1; x++)
-    {
-        for(int y=lBottom; y<lTop; y++)
-        {
-            if(lBackMap.at<Vec2f>(y,x) == Vec2f(0.f, 0.f))
-            {
-                Vec2f lValue = Vec2f(0.f, 0.f);
-                float lIndex = 0.f;
-                for(int u=-1; u<2; u++)
-                    for(int v=-1; v<2; v++)
-                    {
-                        if(lBackMap.at<Vec2f>(y+v, x+u) != Vec2f(0.f, 0.f))
-                        {
-                            lValue[0] = lValue[0]*(lIndex)/(lIndex+1) + lBackMap.at<Vec2f>(y+v, x+u)[0]/(lIndex+1);
-                            lValue[1] = lValue[1]*(lIndex)/(lIndex+1) + lBackMap.at<Vec2f>(y+v, x+u)[1]/(lIndex+1);
-                            lIndex++;
-                        }
-                    }
-                mMap.at<Vec2f>(y,x) = lValue;
-            }
-            else
-            {
-                mMap.at<Vec2f>(y,x) = lBackMap.at<Vec2f>(y,x);
-            }
-        }
-    }
+    // And add it mask-wise
+    mMap = lBackMap;
+    add(mMap, lBuffer, mMap, lMask, mMap.type());
+    mMap = lBuffer;
 }
