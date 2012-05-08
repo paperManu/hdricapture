@@ -30,6 +30,7 @@ void probe()
 
     lSphere.setProjection(eEquirectangular);
     lSphere.setSphereSize(50.8f);
+    lSphere.setSphereReflectance(0.48f);
 
     lSphere.setTrackingLength(30, 3);
 
@@ -89,6 +90,8 @@ void probe()
                         RGBE_WritePixels(lFile, (float*)lHDRi.data, lHDRi.rows*lHDRi.cols);
                     }
                     fclose(lFile);
+
+                    cout << "HDRi computed and saved." << endl;
                 }
                 gMutex.lock();
                 gHDR = false;
@@ -121,6 +124,7 @@ int main(int argc, char** argv)
     float lAperture = 4.0f;
     float lISO = 100.0f;
     float lStopSteps = 1.0f;
+    float lShutterStart = 1.0f;
     float lGain = 0.0f;
     bool lGamma = false;
     bool lICC = false;
@@ -158,6 +162,10 @@ int main(int argc, char** argv)
             else if(strcmp(argv[i], "--stop") == 0)
             {
                 lStopSteps = boost::lexical_cast<float>(argv[i+1]);
+            }
+            else if(strcmp(argv[i], "--start") == 0)
+            {
+                lShutterStart = boost::lexical_cast<float>(argv[i+1]);
             }
             else if(strcmp(argv[i], "--probe") == 0)
             {
@@ -211,7 +219,7 @@ int main(int argc, char** argv)
                 for(int i=0; i<10; i++)
                 {
                     lCamera.getImage();
-                    usleep(10000);
+                    usleep(15000);
                 }
             }
 
@@ -279,8 +287,9 @@ int main(int argc, char** argv)
                         gHDR_done = false;
                         gFixSphere = true;
 
-                        lShutterSpeed = 1.f;
+                        lShutterSpeed = lShutterStart;
                         lCamera.setShutter(lShutterSpeed);
+                        lShutterSpeed = lCamera.getShutter();
                         lCamera.setGamma(1.f);
 
                         lHDRShots = 0;
@@ -328,7 +337,7 @@ int main(int argc, char** argv)
     else if(!lViewMode)
     {
         hdriBuilder lHDRiBuilder;
-        double lShutterSpeed = 1.f;
+        double lShutterSpeed = lShutterStart;
 
         // Set gamma to 1
         lCamera.setGamma(1.f);
@@ -364,11 +373,11 @@ int main(int argc, char** argv)
             for(int j=0; j<10; j++)
             {
                 lCamera.getImage();
-                usleep(10000);
+                usleep(15000);
             }
             lFrame = lCamera.getImage();
 
-            string lStr = "img_probe_" + boost::lexical_cast<std::string>(i) + ".bmp";
+            string lStr = "img_probe_" + boost::lexical_cast<std::string>(i) + ".png";
             lResult = imwrite(lStr, lFrame);
 
             if(lProbeMode)

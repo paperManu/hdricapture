@@ -7,6 +7,7 @@ chromedSphere::chromedSphere()
 {
     mTrackingLength = 5;
     mThreshold = 2;
+    mSphereReflectance = 1.f;
 }
 
 /*******************************************/
@@ -97,6 +98,9 @@ Mat chromedSphere::getConvertedProbe()
     default:
         break;
     }
+
+    // And apply the reflectance coefficient
+    lProbe *= 1/mSphereReflectance;
 
     return lProbe;
 }
@@ -495,7 +499,7 @@ void chromedSphere::projectionMapFromDirections()
         {
             // We set (in chromedSphere::createTransformationMap()) values for the
             // angles to M_PI. We don't want to consider them, so ...
-            if(mMap.at<Vec2f>(y, x)[0] < mSphereImage.rows && mMap.at<Vec2f>(y, x)[1] < mSphereImage.cols)
+            if(mMap.at<Vec2f>(y, x)[0] < mSphereImage.rows-1 && mMap.at<Vec2f>(y, x)[1] < mSphereImage.cols-1)
             {
                 int u, v;
                 u = round(mMap.at<Vec2f>(y,x)[0]);
